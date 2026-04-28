@@ -1,35 +1,23 @@
 "use strict";
 
-// ── DEFAULT API URL ────────────────────────────────────────────────────────────
-// Thay YOUR-USERNAME và YOUR-SPACE-NAME bằng thông tin HuggingFace Space của bạn
-const DEFAULT_API_URL = "https://anhhuy0402-multimodal-emotion-recognition-be.hf.space/predict";
+// ── URL CỐ ĐỊNH ───────────────────────────────────────────────────────────────
+const HF_API_URL = "https://anhhuy0402-multimodal-emotion-recognition-be.hf.space/predict";
+const HF_BASE    = "https://anhhuy0402-multimodal-emotion-recognition-be.hf.space";
 
 // ── ELEMENT REFS ──────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
-const apiUrl    = $("apiUrl");
-const pingBtn   = $("pingBtn");
-const statusDot = $("statusDot");
-const textInput = $("textInput");
-const fileInput = $("fileInput");
-const dropZone  = $("dropZone");
+const pingBtn    = $("pingBtn");
+const statusDot  = $("statusDot");
+const textInput  = $("textInput");
+const fileInput  = $("fileInput");
+const dropZone   = $("dropZone");
 const dropPreview = $("dropPreview");
 const previewImg  = $("previewImg");
 const previewName = $("previewName");
-const clearImg  = $("clearImg");
-const runBtn    = $("runBtn");
-const statusMsg = $("statusMsg");
-const results   = $("results");
-
-// ── SET DEFAULT URL ───────────────────────────────────────────────────────────
-apiUrl.value = DEFAULT_API_URL;
-
-// ── CHAR COUNT (optional — chỉ chạy nếu element tồn tại) ─────────────────────
-const charCount = $("charCount");
-if (charCount) {
-    textInput.addEventListener("input", () => {
-        charCount.textContent = `${textInput.value.length} ký tự`;
-    });
-}
+const clearImg   = $("clearImg");
+const runBtn     = $("runBtn");
+const statusMsg  = $("statusMsg");
+const results    = $("results");
 
 // ── FILE UPLOAD + PREVIEW ─────────────────────────────────────────────────────
 fileInput.addEventListener("change", () => handleFile(fileInput.files[0]));
@@ -54,8 +42,7 @@ dropZone.addEventListener("drop", (e) => {
 
 function handleFile(f) {
     if (!f) return;
-    const url = URL.createObjectURL(f);
-    previewImg.src = url;
+    previewImg.src = URL.createObjectURL(f);
     previewName.textContent = f.name;
     dropPreview.classList.remove("hidden");
     dropZone.classList.add("has-file");
@@ -64,46 +51,54 @@ function handleFile(f) {
 clearImg.addEventListener("click", (e) => {
     e.stopPropagation();
     fileInput.value = "";
-    previewImg.src = "";
+    previewImg.src  = "";
     dropPreview.classList.add("hidden");
     dropZone.classList.remove("has-file");
 });
 
 // ── PING API ──────────────────────────────────────────────────────────────────
 pingBtn.addEventListener("click", async () => {
-    const url = apiUrl.value.trim();
-    if (!url) {
-        showStatus("Nhập URL trước khi ping.", "error");
-        return;
-    }
-
-    // Strip /predict nếu user paste URL đầy đủ, dùng /health
-    const base      = url.replace(/\/predict\/?$/, "");
-    const healthUrl = base + "/health";
-
     pingBtn.textContent = "…";
     pingBtn.disabled    = true;
+    setStatusDot("checking");
 
     try {
-        const res  = await fetch(healthUrl, { signal: AbortSignal.timeout(8000) });
+        const res  = await fetch(HF_BASE + "/health", {
+            signal: AbortSignal.timeout(10000),
+        });
         const data = await res.json();
         const ok   = data.models_loaded === true;
 
-        statusDot.className = `tag tag--green ${ok ? "online" : ""}`;
-        statusDot.innerHTML = `<span class="dot"></span> ${ok ? "API online · Models loaded" : "API online · Models NOT loaded"}`;
+        setStatusDot(ok ? "online" : "warn");
         showStatus(
-            ok ? "✓ Kết nối thành công! Models đã sẵn sàng." : "⚠ API phản hồi nhưng models chưa load.",
+            ok
+                ? "✓ Kết nối thành công! Models đã sẵn sàng."
+                : "⚠ API phản hồi nhưng models chưa load. Kiểm tra thư mục weights/.",
             ok ? "loading" : "error",
         );
-    } catch {
-        statusDot.className = "tag tag--green";
-        statusDot.innerHTML = '<span class="dot"></span> API offline';
-        showStatus("Không kết nối được. Kiểm tra URL hoặc server.", "error");
+    } catch (err) {
+        setStatusDot("offline");
+        const msg = err.name === "TimeoutError"
+            ? "Timeout — Space đang sleep hoặc build. Thử lại sau 30 giây."
+            : "Không kết nối được: " + err.message;
+        showStatus(msg, "error");
     } finally {
         pingBtn.textContent = "Ping";
         pingBtn.disabled    = false;
     }
 });
+
+function setStatusDot(state) {
+    const map = {
+        online:   ["tag tag--green", '<span class="dot"></span> API online · Models loaded'],
+        warn:     ["tag tag--green", '<span class="dot"></span> API online · Models NOT loaded'],
+        offline:  ["tag tag--green", '<span class="dot"></span> API offline'],
+        checking: ["tag tag--green", '<span class="dot"></span> Đang kiểm tra…'],
+    };
+    const [cls, html] = map[state] || map.offline;
+    statusDot.className   = cls;
+    statusDot.innerHTML   = html;
+}
 
 // ── STATUS HELPERS ─────────────────────────────────────────────────────────────
 function showStatus(msg, type) {
@@ -124,15 +119,10 @@ function setPct(id, val) {
     const el = $(`p-${id}`);
     if (el) el.textContent = (val * 100).toFixed(1) + "%";
 }
-
-// BE trả về { Positive, Neutral, Negative }
 function setBreakdown(prefix, data) {
-    setPct(`${prefix}p`,  data.Positive);
-    setBar(`${prefix}p`,  data.Positive);
-    setPct(`${prefix}n`,  data.Neutral);
-    setBar(`${prefix}n`,  data.Neutral);
-    setPct(`${prefix}ng`, data.Negative);
-    setBar(`${prefix}ng`, data.Negative);
+    setPct(`${prefix}p`,  data.Positive);  setBar(`${prefix}p`,  data.Positive);
+    setPct(`${prefix}n`,  data.Neutral);   setBar(`${prefix}n`,  data.Neutral);
+    setPct(`${prefix}ng`, data.Negative);  setBar(`${prefix}ng`, data.Negative);
 }
 
 // ── VERDICT PILL ──────────────────────────────────────────────────────────────
@@ -154,14 +144,13 @@ function setBcardPred(id, label) {
 }
 
 // ── MATPLOTLIB CHART LOADER ───────────────────────────────────────────────────
-// FIX: phải remove class "hidden" trên <img> để ảnh hiện ra
 function loadMplChart(zoneId, imgId, b64) {
     if (!b64) return;
     const zone = $(zoneId);
     const img  = $(imgId);
     if (!zone || !img) return;
     img.src = "data:image/png;base64," + b64;
-    img.classList.remove("hidden");   // ← fix: bản gốc thiếu dòng này
+    img.classList.remove("hidden");
     zone.classList.add("loaded");
 }
 
@@ -169,11 +158,9 @@ function loadMplChart(zoneId, imgId, b64) {
 runBtn.addEventListener("click", async () => {
     const text = textInput.value.trim();
     const file = fileInput.files[0];
-    const url  = apiUrl.value.trim();
 
     if (!text) { showStatus("Vui lòng nhập văn bản cần phân tích.", "error"); return; }
     if (!file) { showStatus("Vui lòng chọn ảnh để phân tích.",      "error"); return; }
-    if (!url)  { showStatus("Vui lòng nhập HuggingFace Spaces URL.", "error"); return; }
 
     runBtn.disabled = true;
     showStatus("Đang phân tích… vui lòng chờ.", "loading");
@@ -184,7 +171,7 @@ runBtn.addEventListener("click", async () => {
         fd.append("text", text);
         fd.append("file", file);
 
-        const res = await fetch(url, {
+        const res = await fetch(HF_API_URL, {
             method: "POST",
             body:   fd,
             signal: AbortSignal.timeout(60000),
@@ -192,20 +179,15 @@ runBtn.addEventListener("click", async () => {
 
         if (!res.ok) {
             const errBody = await res.text().catch(() => "");
-            throw new Error(`HTTP ${res.status}${errBody ? " — " + errBody.slice(0, 120) : ""}`);
+            throw new Error(`HTTP ${res.status}${errBody ? " — " + errBody.slice(0, 200) : ""}`);
         }
 
         const data = await res.json();
         if (data.status !== "success")
             throw new Error(data.message || "Unknown error from server");
 
-        // — VERDICT —
         setVerdict(data.prediction, data.confidence);
 
-        // — BREAKDOWN CARDS —
-        // BE: data.details.text_breakdown  = { Positive, Neutral, Negative }
-        // BE: data.details.image_breakdown = { Positive, Neutral, Negative }
-        // BE: data.fusion_breakdown        = { Positive, Neutral, Negative }
         setBreakdown("t", data.details.text_breakdown);
         setBcardPred("bcard-text-pred",   data.details.text_pred);
 
@@ -215,12 +197,10 @@ runBtn.addEventListener("click", async () => {
         setBreakdown("f", data.fusion_breakdown);
         setBcardPred("bcard-fusion-pred", data.prediction);
 
-        // — MATPLOTLIB CHARTS (optional) —
         loadMplChart("mpl-text",   "mpl-text-img",   data.chart_text_b64);
         loadMplChart("mpl-image",  "mpl-image-img",  data.chart_image_b64);
         loadMplChart("mpl-fusion", "mpl-fusion-img", data.chart_fusion_b64);
 
-        // — SHOW —
         results.classList.remove("hidden");
         hideStatus();
         results.scrollIntoView({ behavior: "smooth", block: "start" });
