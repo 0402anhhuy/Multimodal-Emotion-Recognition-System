@@ -1,23 +1,34 @@
 "use strict";
 
-// ── URL CỐ ĐỊNH ───────────────────────────────────────────────────────────────
-const HF_API_URL = "https://anhhuy0402-multimodal-emotion-recognition-be.hf.space/predict";
-const HF_BASE    = "https://anhhuy0402-multimodal-emotion-recognition-be.hf.space";
+// ── DEFAULT API URL ────────────────────────────────────────────────────────────
+const DEFAULT_API_URL = "https://anhhuy0402-multimodal-emotion-recognition-be.hf.space/predict";
 
 // ── ELEMENT REFS ──────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
-const pingBtn    = $("pingBtn");
-const statusDot  = $("statusDot");
-const textInput  = $("textInput");
-const fileInput  = $("fileInput");
-const dropZone   = $("dropZone");
+const apiUrl      = $("apiUrl");
+const pingBtn     = $("pingBtn");
+const statusDot   = $("statusDot");
+const textInput   = $("textInput");
+const fileInput   = $("fileInput");
+const dropZone    = $("dropZone");
 const dropPreview = $("dropPreview");
 const previewImg  = $("previewImg");
 const previewName = $("previewName");
-const clearImg   = $("clearImg");
-const runBtn     = $("runBtn");
-const statusMsg  = $("statusMsg");
-const results    = $("results");
+const clearImg    = $("clearImg");
+const runBtn      = $("runBtn");
+const statusMsg   = $("statusMsg");
+const results     = $("results");
+
+// ── SET DEFAULT URL ───────────────────────────────────────────────────────────
+apiUrl.value = DEFAULT_API_URL;
+
+// ── CHAR COUNT ────────────────────────────────────────────────────────────────
+const charCount = $("charCount");
+if (charCount) {
+    textInput.addEventListener("input", () => {
+        charCount.textContent = `${textInput.value.length} ký tự`;
+    });
+}
 
 // ── FILE UPLOAD + PREVIEW ─────────────────────────────────────────────────────
 fileInput.addEventListener("change", () => handleFile(fileInput.files[0]));
@@ -42,7 +53,8 @@ dropZone.addEventListener("drop", (e) => {
 
 function handleFile(f) {
     if (!f) return;
-    previewImg.src = URL.createObjectURL(f);
+    const url = URL.createObjectURL(f);
+    previewImg.src = url;
     previewName.textContent = f.name;
     dropPreview.classList.remove("hidden");
     dropZone.classList.add("has-file");
@@ -51,54 +63,50 @@ function handleFile(f) {
 clearImg.addEventListener("click", (e) => {
     e.stopPropagation();
     fileInput.value = "";
-    previewImg.src  = "";
+    previewImg.src = "";
     dropPreview.classList.add("hidden");
     dropZone.classList.remove("has-file");
 });
 
 // ── PING API ──────────────────────────────────────────────────────────────────
 pingBtn.addEventListener("click", async () => {
+    const url = apiUrl.value.trim();
+    if (!url) {
+        showStatus("Nhập URL trước khi ping.", "error");
+        return;
+    }
+
+    // Strip /predict nếu user paste URL đầy đủ → dùng /health
+    const base      = url.replace(/\/predict\/?$/, "");
+    const healthUrl = base + "/health";
+
     pingBtn.textContent = "…";
     pingBtn.disabled    = true;
-    setStatusDot("checking");
 
     try {
-        const res  = await fetch(HF_BASE + "/health", {
-            signal: AbortSignal.timeout(10000),
-        });
+        const res  = await fetch(healthUrl, { signal: AbortSignal.timeout(8000) });
         const data = await res.json();
         const ok   = data.models_loaded === true;
 
-        setStatusDot(ok ? "online" : "warn");
+        statusDot.className = `tag tag--green ${ok ? "online" : ""}`;
+        statusDot.innerHTML = `<span class="dot"></span> ${
+            ok ? "API online · Models loaded" : "API online · Models NOT loaded"
+        }`;
         showStatus(
             ok
                 ? "✓ Kết nối thành công! Models đã sẵn sàng."
-                : "⚠ API phản hồi nhưng models chưa load. Kiểm tra thư mục weights/.",
+                : "⚠ API phản hồi nhưng models chưa load.",
             ok ? "loading" : "error",
         );
-    } catch (err) {
-        setStatusDot("offline");
-        const msg = err.name === "TimeoutError"
-            ? "Timeout — Space đang sleep hoặc build. Thử lại sau 30 giây."
-            : "Không kết nối được: " + err.message;
-        showStatus(msg, "error");
+    } catch {
+        statusDot.className = "tag tag--green";
+        statusDot.innerHTML = '<span class="dot"></span> API offline';
+        showStatus("Không kết nối được. Kiểm tra URL hoặc server.", "error");
     } finally {
         pingBtn.textContent = "Ping";
         pingBtn.disabled    = false;
     }
 });
-
-function setStatusDot(state) {
-    const map = {
-        online:   ["tag tag--green", '<span class="dot"></span> API online · Models loaded'],
-        warn:     ["tag tag--green", '<span class="dot"></span> API online · Models NOT loaded'],
-        offline:  ["tag tag--green", '<span class="dot"></span> API offline'],
-        checking: ["tag tag--green", '<span class="dot"></span> Đang kiểm tra…'],
-    };
-    const [cls, html] = map[state] || map.offline;
-    statusDot.className   = cls;
-    statusDot.innerHTML   = html;
-}
 
 // ── STATUS HELPERS ─────────────────────────────────────────────────────────────
 function showStatus(msg, type) {
@@ -119,6 +127,8 @@ function setPct(id, val) {
     const el = $(`p-${id}`);
     if (el) el.textContent = (val * 100).toFixed(1) + "%";
 }
+
+// BE trả về { Positive, Neutral, Negative }
 function setBreakdown(prefix, data) {
     setPct(`${prefix}p`,  data.Positive);  setBar(`${prefix}p`,  data.Positive);
     setPct(`${prefix}n`,  data.Neutral);   setBar(`${prefix}n`,  data.Neutral);
@@ -150,17 +160,19 @@ function loadMplChart(zoneId, imgId, b64) {
     const img  = $(imgId);
     if (!zone || !img) return;
     img.src = "data:image/png;base64," + b64;
-    img.classList.remove("hidden");
-    zone.classList.add("loaded");
+    img.classList.remove("hidden");   // bắt buộc — img mặc định có class hidden
+    zone.classList.add("loaded");     // ẩn placeholder .mpl-empty
 }
 
 // ── MAIN PREDICT ──────────────────────────────────────────────────────────────
 runBtn.addEventListener("click", async () => {
     const text = textInput.value.trim();
     const file = fileInput.files[0];
+    const url  = apiUrl.value.trim();
 
     if (!text) { showStatus("Vui lòng nhập văn bản cần phân tích.", "error"); return; }
     if (!file) { showStatus("Vui lòng chọn ảnh để phân tích.",      "error"); return; }
+    if (!url)  { showStatus("Vui lòng nhập HuggingFace Spaces URL.", "error"); return; }
 
     runBtn.disabled = true;
     showStatus("Đang phân tích… vui lòng chờ.", "loading");
@@ -171,7 +183,7 @@ runBtn.addEventListener("click", async () => {
         fd.append("text", text);
         fd.append("file", file);
 
-        const res = await fetch(HF_API_URL, {
+        const res = await fetch(url, {
             method: "POST",
             body:   fd,
             signal: AbortSignal.timeout(60000),
@@ -179,15 +191,19 @@ runBtn.addEventListener("click", async () => {
 
         if (!res.ok) {
             const errBody = await res.text().catch(() => "");
-            throw new Error(`HTTP ${res.status}${errBody ? " — " + errBody.slice(0, 200) : ""}`);
+            throw new Error(
+                `HTTP ${res.status}${errBody ? " — " + errBody.slice(0, 120) : ""}`,
+            );
         }
 
         const data = await res.json();
         if (data.status !== "success")
             throw new Error(data.message || "Unknown error from server");
 
+        // — VERDICT —
         setVerdict(data.prediction, data.confidence);
 
+        // — BREAKDOWN CARDS —
         setBreakdown("t", data.details.text_breakdown);
         setBcardPred("bcard-text-pred",   data.details.text_pred);
 
@@ -197,10 +213,12 @@ runBtn.addEventListener("click", async () => {
         setBreakdown("f", data.fusion_breakdown);
         setBcardPred("bcard-fusion-pred", data.prediction);
 
+        // — MATPLOTLIB CHARTS (hiện ra khi backend trả về base64 PNG) —
         loadMplChart("mpl-text",   "mpl-text-img",   data.chart_text_b64);
         loadMplChart("mpl-image",  "mpl-image-img",  data.chart_image_b64);
         loadMplChart("mpl-fusion", "mpl-fusion-img", data.chart_fusion_b64);
 
+        // — SHOW —
         results.classList.remove("hidden");
         hideStatus();
         results.scrollIntoView({ behavior: "smooth", block: "start" });
