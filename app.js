@@ -1,32 +1,35 @@
-/* ══════════════════════════════════════════════════════════════════════════════
-   SentimentFusion · script.js
-   Kết nối với FastAPI backend trên HuggingFace Spaces
-   ══════════════════════════════════════════════════════════════════════════════ */
-
 "use strict";
+
+// ── DEFAULT API URL ────────────────────────────────────────────────────────────
+// Thay YOUR-USERNAME và YOUR-SPACE-NAME bằng thông tin HuggingFace Space của bạn
+const DEFAULT_API_URL = "https://anhhuy0402-multimodal-emotion-recognition-be.hf.space/predict";
 
 // ── ELEMENT REFS ──────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
-const apiUrl = $("apiUrl");
-const pingBtn = $("pingBtn");
+const apiUrl    = $("apiUrl");
+const pingBtn   = $("pingBtn");
 const statusDot = $("statusDot");
 const textInput = $("textInput");
-const charCount = $("charCount");
 const fileInput = $("fileInput");
-const dropZone = $("dropZone");
+const dropZone  = $("dropZone");
 const dropPreview = $("dropPreview");
-const previewImg = $("previewImg");
+const previewImg  = $("previewImg");
 const previewName = $("previewName");
-const clearImg = $("clearImg");
-const runBtn = $("runBtn");
+const clearImg  = $("clearImg");
+const runBtn    = $("runBtn");
 const statusMsg = $("statusMsg");
-const results = $("results");
+const results   = $("results");
 
-// ── CHAR COUNT ────────────────────────────────────────────────────────────────
-textInput.addEventListener("input", () => {
-    const n = textInput.value.length;
-    charCount.textContent = `${n} ký tự`;
-});
+// ── SET DEFAULT URL ───────────────────────────────────────────────────────────
+apiUrl.value = DEFAULT_API_URL;
+
+// ── CHAR COUNT (optional — chỉ chạy nếu element tồn tại) ─────────────────────
+const charCount = $("charCount");
+if (charCount) {
+    textInput.addEventListener("input", () => {
+        charCount.textContent = `${textInput.value.length} ký tự`;
+    });
+}
 
 // ── FILE UPLOAD + PREVIEW ─────────────────────────────────────────────────────
 fileInput.addEventListener("change", () => handleFile(fileInput.files[0]));
@@ -42,7 +45,6 @@ dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
     const f = e.dataTransfer.files[0];
     if (f && f.type.startsWith("image/")) {
-        // Gán file vào input
         const dt = new DataTransfer();
         dt.items.add(f);
         fileInput.files = dt.files;
@@ -75,25 +77,22 @@ pingBtn.addEventListener("click", async () => {
         return;
     }
 
-    // Dùng /health endpoint (thay /predict trong url nếu user paste đầy đủ)
-    const healthUrl = url.replace(/\/predict\/?$/, "") + "/health";
+    // Strip /predict nếu user paste URL đầy đủ, dùng /health
+    const base      = url.replace(/\/predict\/?$/, "");
+    const healthUrl = base + "/health";
 
     pingBtn.textContent = "…";
-    pingBtn.disabled = true;
+    pingBtn.disabled    = true;
 
     try {
-        const res = await fetch(healthUrl, {
-            signal: AbortSignal.timeout(8000),
-        });
+        const res  = await fetch(healthUrl, { signal: AbortSignal.timeout(8000) });
         const data = await res.json();
-        const ok = data.models_loaded === true;
+        const ok   = data.models_loaded === true;
 
         statusDot.className = `tag tag--green ${ok ? "online" : ""}`;
         statusDot.innerHTML = `<span class="dot"></span> ${ok ? "API online · Models loaded" : "API online · Models NOT loaded"}`;
         showStatus(
-            ok
-                ? "✓ Kết nối thành công! Models đã sẵn sàng."
-                : "⚠ API phản hồi nhưng models chưa load.",
+            ok ? "✓ Kết nối thành công! Models đã sẵn sàng." : "⚠ API phản hồi nhưng models chưa load.",
             ok ? "loading" : "error",
         );
     } catch {
@@ -102,14 +101,14 @@ pingBtn.addEventListener("click", async () => {
         showStatus("Không kết nối được. Kiểm tra URL hoặc server.", "error");
     } finally {
         pingBtn.textContent = "Ping";
-        pingBtn.disabled = false;
+        pingBtn.disabled    = false;
     }
 });
 
 // ── STATUS HELPERS ─────────────────────────────────────────────────────────────
 function showStatus(msg, type) {
     statusMsg.textContent = msg;
-    statusMsg.className = `status-msg ${type}`;
+    statusMsg.className   = `status-msg ${type}`;
     statusMsg.classList.remove("hidden");
 }
 function hideStatus() {
@@ -125,11 +124,13 @@ function setPct(id, val) {
     const el = $(`p-${id}`);
     if (el) el.textContent = (val * 100).toFixed(1) + "%";
 }
+
+// BE trả về { Positive, Neutral, Negative }
 function setBreakdown(prefix, data) {
-    setPct(`${prefix}p`, data.Positive);
-    setBar(`${prefix}p`, data.Positive);
-    setPct(`${prefix}n`, data.Neutral);
-    setBar(`${prefix}n`, data.Neutral);
+    setPct(`${prefix}p`,  data.Positive);
+    setBar(`${prefix}p`,  data.Positive);
+    setPct(`${prefix}n`,  data.Neutral);
+    setBar(`${prefix}n`,  data.Neutral);
     setPct(`${prefix}ng`, data.Negative);
     setBar(`${prefix}ng`, data.Negative);
 }
@@ -137,11 +138,10 @@ function setBreakdown(prefix, data) {
 // ── VERDICT PILL ──────────────────────────────────────────────────────────────
 function setVerdict(prediction, confidence) {
     const pill = $("verdictPill");
-    const cls = { Positive: "pos", Neutral: "neu", Negative: "neg" };
+    const cls  = { Positive: "pos", Neutral: "neu", Negative: "neg" };
     pill.textContent = prediction;
-    pill.className = `verdict-pill ${cls[prediction] || "neu"}`;
-    $("verdictConf").textContent =
-        `Confidence ${(confidence * 100).toFixed(1)}%`;
+    pill.className   = `verdict-pill ${cls[prediction] || "neu"}`;
+    $("verdictConf").textContent = `Confidence ${(confidence * 100).toFixed(1)}%`;
 }
 
 // ── BCARD PRED TAG ────────────────────────────────────────────────────────────
@@ -150,29 +150,18 @@ function setBcardPred(id, label) {
     if (!el) return;
     const cls = { Positive: "pos", Neutral: "neu", Negative: "neg" };
     el.textContent = label;
-    el.className = `bcard-pred ${cls[label] || ""}`;
+    el.className   = `bcard-pred ${cls[label] || ""}`;
 }
 
 // ── MATPLOTLIB CHART LOADER ───────────────────────────────────────────────────
-// Khi backend trả về chart_text_b64 / chart_image_b64 / chart_fusion_b64
-// (base64 PNG từ matplotlib), gọi hàm này để hiển thị.
-//
-// Trong Python/FastAPI, thêm vào response:
-//   import base64, io, matplotlib
-//   matplotlib.use('Agg')
-//   import matplotlib.pyplot as plt
-//
-//   buf = io.BytesIO()
-//   fig.savefig(buf, format='png', bbox_inches='tight', facecolor='#141414')
-//   buf.seek(0)
-//   result["chart_text_b64"] = base64.b64encode(buf.read()).decode()
-//   plt.close(fig)
+// FIX: phải remove class "hidden" trên <img> để ảnh hiện ra
 function loadMplChart(zoneId, imgId, b64) {
     if (!b64) return;
     const zone = $(zoneId);
-    const img = $(imgId);
+    const img  = $(imgId);
     if (!zone || !img) return;
     img.src = "data:image/png;base64," + b64;
+    img.classList.remove("hidden");   // ← fix: bản gốc thiếu dòng này
     zone.classList.add("loaded");
 }
 
@@ -180,21 +169,11 @@ function loadMplChart(zoneId, imgId, b64) {
 runBtn.addEventListener("click", async () => {
     const text = textInput.value.trim();
     const file = fileInput.files[0];
-    const url = apiUrl.value.trim();
+    const url  = apiUrl.value.trim();
 
-    // Validate
-    if (!text) {
-        showStatus("Vui lòng nhập văn bản cần phân tích.", "error");
-        return;
-    }
-    if (!file) {
-        showStatus("Vui lòng chọn ảnh để phân tích.", "error");
-        return;
-    }
-    if (!url) {
-        showStatus("Vui lòng nhập HuggingFace Spaces URL.", "error");
-        return;
-    }
+    if (!text) { showStatus("Vui lòng nhập văn bản cần phân tích.", "error"); return; }
+    if (!file) { showStatus("Vui lòng chọn ảnh để phân tích.",      "error"); return; }
+    if (!url)  { showStatus("Vui lòng nhập HuggingFace Spaces URL.", "error"); return; }
 
     runBtn.disabled = true;
     showStatus("Đang phân tích… vui lòng chờ.", "loading");
@@ -207,15 +186,13 @@ runBtn.addEventListener("click", async () => {
 
         const res = await fetch(url, {
             method: "POST",
-            body: fd,
+            body:   fd,
             signal: AbortSignal.timeout(60000),
         });
 
         if (!res.ok) {
             const errBody = await res.text().catch(() => "");
-            throw new Error(
-                `HTTP ${res.status}${errBody ? " — " + errBody.slice(0, 120) : ""}`,
-            );
+            throw new Error(`HTTP ${res.status}${errBody ? " — " + errBody.slice(0, 120) : ""}`);
         }
 
         const data = await res.json();
@@ -226,24 +203,28 @@ runBtn.addEventListener("click", async () => {
         setVerdict(data.prediction, data.confidence);
 
         // — BREAKDOWN CARDS —
+        // BE: data.details.text_breakdown  = { Positive, Neutral, Negative }
+        // BE: data.details.image_breakdown = { Positive, Neutral, Negative }
+        // BE: data.fusion_breakdown        = { Positive, Neutral, Negative }
         setBreakdown("t", data.details.text_breakdown);
-        setBcardPred("bcard-text-pred", data.details.text_pred);
+        setBcardPred("bcard-text-pred",   data.details.text_pred);
 
         setBreakdown("i", data.details.image_breakdown);
-        setBcardPred("bcard-image-pred", data.details.image_pred);
+        setBcardPred("bcard-image-pred",  data.details.image_pred);
 
         setBreakdown("f", data.fusion_breakdown);
         setBcardPred("bcard-fusion-pred", data.prediction);
 
-        // — MATPLOTLIB CHARTS (optional — hiển thị khi backend trả về) —
-        loadMplChart("mpl-text", "mpl-text-img", data.chart_text_b64);
-        loadMplChart("mpl-image", "mpl-image-img", data.chart_image_b64);
+        // — MATPLOTLIB CHARTS (optional) —
+        loadMplChart("mpl-text",   "mpl-text-img",   data.chart_text_b64);
+        loadMplChart("mpl-image",  "mpl-image-img",  data.chart_image_b64);
         loadMplChart("mpl-fusion", "mpl-fusion-img", data.chart_fusion_b64);
 
         // — SHOW —
         results.classList.remove("hidden");
         hideStatus();
         results.scrollIntoView({ behavior: "smooth", block: "start" });
+
     } catch (err) {
         showStatus("Lỗi: " + err.message, "error");
     } finally {
